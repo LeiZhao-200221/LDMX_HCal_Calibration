@@ -1,0 +1,378 @@
+# =============================================================================
+# LDMX 2022 CERN test beam - HCal prototype analysis: the ONE configuration file
+#
+# * Relative paths are relative to the data_analysis/ folder (the repository root).
+# * ${name} expands to another entry of "paths".
+# * Put machine-specific locations (where your ROOT / csv files really are)
+#   into configure/local.yml (git-ignored); it overrides any key of this file.
+#   See configure/local.example.yml.
+# * Products are sorted by kind, and by mode (fullset = a normal run, or test with --test). A normal run
+#   writes its stage folders straight into data/, calibration/ and cache/ ([test/] = the test/ folder of a
+#   --test run); results/ keeps one folder per mode (<mode> = fullset or test):
+#     data/[test/]<stage>/         official csv generated from the beam data (clean dataset, ci event
+#                                   energies; one per input csv, in a sub-folder per run)
+#     calibration/[test/]<stage>/   fitted calibration tables (pedestal+MPV, TOT lines, CI map + s)
+#     results/<mode>/<stage>/       figures and summary tables (the physics interpretation)
+#     cache/[test/]<stage>/         intermediates only (test subsets, caches for -from-saved);
+#                                   git-ignored, deleting it never removes an official output
+#   The next stage reads the previous stage's products from there, so the chain is
+#   closed: `.\runner.ps1 check` lists every link.
+# =============================================================================
+
+paths:
+  # ---- inputs ----  ONE setting moves every input: data_dir.  On a new machine write it into configure/local.yml
+  # (.\runner.ps1 setup <folder> does that and checks the folder), or set the environment variable
+  # LDMX_DATA_DIR (it overrides data_dir of config.yml and local.yml).  The folder holds root/,
+  # analysis_files/ and charge_injection_scans/; the stages write their csv there too
+  # (data/<stage>/, data/test/<stage>/).
+  data_dir: data                                    # data_analysis/data (only README files are in git)
+  datasets_file: configure/datasets.yml             # runs by particle and energy (--electron 0.3, --pion 4 ...)
+  root_dir: ${data_dir}/root                        # decoded HGCROC ntuples (*.root), data and MC
+  analysis_files_dir: ${data_dir}/analysis_files    # beam csv files: one folder per run (<Particle>_<E>GeV/), one
+                                                    # csv per ROOT file; make-csv writes them (-test:
+                                                    # data/test/analysis_files/), every later stage reads them
+  ci_scan_dir: ${data_dir}/charge_injection_scans   # charge-injection scan csv files
+  channel_map: configure/channel_map.csv            # DPM,LINK,CHAN -> PLANE,STRIP,END (384 channels)
+  toa_calibration: calibration/reference/toa_calibration_phase3.csv  # Joe's per-bar TOA constants
+  # ---- products ----
+  generated_data_dir: ${data_dir}                   # -> data/<stage>/, data/test/<stage>/
+  calibration_dir: calibration                      # -> calibration/<stage>/, calibration/test/<stage>/
+  results_dir: results                              # -> results/fullset/<stage>/, results/test/<stage>/
+  cache_dir: cache                                  # -> cache/<stage>/, cache/test/<stage>/: intermediates
+                                                    #    (test subsets, -from-saved caches); git-ignored, safe to delete
+
+safety:
+  # Folders that no stage may ever write into (checked by every writer).  List the
+  # original data / code folders here (in configure/local.yml) when analysis_files_dir
+  # or ci_scan_dir point at them.
+  protected_dirs: []
+
+run:
+  test_events: 5000        # --test: first N events (smallest pf_event ids) of every input (positive integer)
+  chunksize: 2000000       # csv rows per streamed chunk (positive integer)
+  workers: 4               # parallel processes for per-channel fits (positive integer)
+
+# -----------------------------------------------------------------------------
+# datasets: the beam files, by particle and energy, are listed in configure/datasets.yml
+# (paths.datasets_file).  Command line: --electron 0.3 / --muon / --pion 4 (see datasets.yml); positional run
+# names are refused there.  The settings below name a run by its reference "<particle> <energy in GeV>" with the
+# full particle name: "muon 4", "electron 0.3", "pion 0.5" (case-insensitive); any run of datasets.yml is accepted.
+# The run key (muon_4GeV, electron_0.3GeV) is derived; the run folder (Muon_4GeV/) holds the run's csv files and
+# names the per-csv products.  A "datasets:" section here or in local.yml is merged on top of datasets.yml per run
+# (keyed by reference or run key; fields root, runs, label), e.g. to point one run at another ROOT file:
+#   datasets:
+#     muon 4:
+#       root: D:/somewhere/fixed_Muon_4GeV.root
+# -----------------------------------------------------------------------------
+# =============================================================================
+# Stage settings
+# Every default of every stage. A command-line flag overrides the value for one run;
+# configure/local.yml can override any key on one machine. Values must stay equal to the
+# module DEFAULTS shipped with the code (tests/test_config_defaults.py checks this).
+# =============================================================================
+
+make_csv:
+  tree: ntuplizehgcroc/hgcroc        # decoded HGCROC ntuple tree (the highest cycle is read)
+  events_tree: LDMX_Events           # ldmx-sw event-file tree (MC, packed HGCROC sample words)
+  digi_branch: auto                  # HcalDigis_<pass> branch of an event file; auto = the first one found
+  chunk_entries: 3072000             # ntuple entries per streamed chunk (= 1000 dense data events), positive integer;
+                                     # does not change the csv [-chunk-entries]
+  events_per_chunk: 20000            # events per chunk for ldmx-sw event files, positive integer; does not change
+                                     # the csv
+  waveform: false                    # add adc_0..adc_7 per end (Joe's 31-column layout; calib then uses the exact
+                                     # 8 x mode anchor) [-waveform]
+  max_events: null                   # first N events of every ROOT file in file order (null = all; N >= 1); without
+                                     # -test they make the run's csv (WARNING); -test uses run.test_events [-max-events]
+  mc: false                          # MC mode for every run (runs with kind: mc and event files are MC anyway) [-mc]
+  mc_samples_per_digi: auto          # expected samples per MC digi, checked before conversion (auto = no check;
+                                     # positive integer; MC mode only) [-mc-samples]
+  tot_mode: tot_branch               # TOT sample source: tot_branch (the tot branch) | tot_comp | tot_ne_adc (flat MC
+                                     # ntuples only); the raw sums always use the tot branch [-tot-mode]
+  duplicate_digis: error             # repeated (event, layer, strip, end) digi: error (stop) | drop (leave them out);
+                                     # the 2022 data have none [-duplicate-digis]
+  sample_window: all                 # aggregate only samples A..B-1 ("A:B", integers 0 <= A < B; "A:" / ":B" open);
+                                     # all = every sample [-sample-window]
+  toa_calibration: null              # TOA table; null = paths.toa_calibration; none = no BX wrap, no end-1 offset;
+                                     # keys checked (each prototype bar at most once) [-toa-calibration]
+  missing_toa_calibration: drop      # bar with TOA hits but no TOA-table row: drop = drop the whole bar | error = stop
+  line_terminator: crlf              # csv line end: crlf (as the production files) | lf | os
+  parallel_write_min_rows: 2000000   # outputs with at least this many rows format their text in run.workers
+                                     # processes (integer >= 0)
+  overwrite: false                   # replace an existing output csv (default: refuse and skip) [-overwrite]
+  qa_bins: 100                       # QA pdf (-only qa): histogram bins (positive integer)
+  qa_cmin: 0.01                      # QA pdf: 2-d histogram cells below this count stay empty (hist2d cmin; >= 0)
+  qa_cmap: jet                       # QA pdf: 2-d histogram colour map
+
+calibration:
+  output_csv: calibration_parameters.csv            # full table (both csv units) in calibration/[test/]pedestal_mpv/,
+                                                    # read downstream via ctx.calibration_file(); one csv unit alone
+                                                    # writes pedestal_parameters.csv or mpv_parameters.csv
+  histogram_cache: calibration_histograms.npz       # raw per-channel adc_sum histograms of the run in
+                                                    # cache/[test/]pedestal_mpv/ (input of -from-saved)
+  write_histogram_cache: true                       # write the cache on every run that reads the csv (needed by
+                                                    # -from-saved, e.g. -only plots -from-saved)
+  source_dataset: "muon 4"                          # pedestal + MIP run; a run flag replaces it (calib --electron 4)
+  # ---- pedestal ----
+  pedestal_selection: raw_samples                   # raw_samples (raw TOT/TOA sums of both ends == 0; needs the
+                                                    # raw_*_sum columns make-csv writes, else the run stops) |
+                                                    # csv_tot_toa_zero (explicit csv approximation)
+                                                    # [-pedestal-selection]
+  pedestal_anchor: auto                             # auto (sample_mode when the csv has adc_{i}_end{e} from make-csv
+                                                    # -waveform, else median_sum) | sample_mode | median_sum
+  pedestal_window_halfwidth: 200.0                  # open window |adc_sum - anchor| < 200 ADC of the Gaussian MLE
+                                                    # [-pedestal-window]
+  pedestal_range_nsigma: 5.0                        # pedestal_range_with_5sigma = pedestal + 5 * pedestal_sigma
+                                                    # (hit threshold of clean -pedestalsigma)
+  pedestal_range_fraction: 0.2                      # pedestal_range_with_20percent = (1 + 0.2) * pedestal (default
+                                                    # hit threshold, clean -pedestalscale)
+  # ---- MIP MPV ----
+  mpv_nsigma: 5.0                                   # MPV fits use x = adc_sum - pedestal > 5 * pedestal_sigma
+                                                    # (strict) [-mpv-nsigma]
+  mpv_hist_range: [0.0, 2000.0]                     # x range of the MPV histograms [ADC]; both bin widths must
+                                                    # divide it into whole bins
+  mpv_rough_bin_width: 40.0                         # rough-fit bin width [ADC] (50 bins over 2000 ADC)
+  mpv_final_bin_width: 20.0                         # final-fit bin width [ADC] [-mpv-bin-width]
+  mpv_window_widths: 2.0                            # final window = rough peak +- 2 * w, w = FWHM / 2.3548 of the
+                                                    # rough curve [-mpv-window-widths]
+  mpv_rough_likelihood: neyman                      # neyman (chi2 with sqrt(n) errors on non-empty bins) | poisson
+  mpv_rough_start: valley                           # valley (start at the minimum between noise shoulder and MIP
+                                                    # peak) | threshold (every bin above the cut)
+  mpv_window_above_valley: false                    # true: the final window also starts at the valley, not only at
+                                                    # the cut
+  mpv_require_rough_convergence: false              # true: a non-converged rough fit -> ROUGH_FIT_FAILED (default:
+                                                    # it only seeds the final fit, recorded)
+  mpv_min_entries: 100                              # fewer entries above the cut -> LOW_STATS
+  mpv_min_bins: 6                                   # fewer rough bins or final-window bins -> LOW_STATS (must be >=
+                                                    # 5: 4 parameters)
+  mpv_eta_range: [5.0, 1000.0]                      # bounds of the Landau width eta [ADC]
+  mpv_sigma_range: [1.0, 1000.0]                    # bounds of the Gaussian smearing sigma [ADC]
+  langaus_n_steps: 100                              # minimum convolution steps, positive even (ROOT langaus.C /
+                                                    # pylandau: 100)
+  langaus_n_sigma: 8.0                              # convolution range +- 8 Gaussian sigma (pylandau)
+  langaus_max_step_per_eta: 0.5                     # convolution step <= 0.5 * eta (more steps for narrow Landaus,
+                                                    # cap 4000; 0 = always langaus_n_steps)
+
+clean_dataset:
+  # stage "clean" (src/ldmx_hcal/selection/clean_dataset.py): the clean dataset of a beam csv is a byte-exact subset of
+  # it (data/[test/]clean_dataset/<run>/<csv stem>_clean.csv) that every later stage reads with -clean-input.
+  # Per end: E_MIP = (adc_sum - pedestal)/mpv, E_MeV = E_MIP * mip_energy_mev; hit = adc_sum >= threshold column
+  # (finite pedestal / threshold, mpv > 0).  muon: bar = both ends hit, <= 1 bar per layer, layer-1 bar with both
+  # end energies in the window; otherparticle: bar = either end hit, no event cut.
+  # The first four keys define the selection: changing one that acts on a run makes its clean datasets stale
+  # (-clean-input stops until clean runs again); the diagnostics keys only change the result units (-from-saved).
+  standard_by_particle: {muon: muon, electron: otherparticle, pion: otherparticle}  # standard per particle;
+                                           # -muon-standard / -otherparticle override it (--muon selects runs)
+  threshold_mode: pedestalscale            # pedestalscale: pedestal_range_with_20percent (1.2 x pedestal; the 2022
+                                           # analysis, in sync with that year's MC) | pedestalsigma:
+                                           # pedestal_range_with_5sigma (pedestal + 5 sigma; Lei's recommendation
+                                           # for future years)
+  mip_energy_mev: 4.83143                  # energy of one MIP in a bar [MeV] (open question: 4.83143 vs 4.83148)
+  layer1_energy_window_mev: [1.84, 7.83]   # muon: both ends of the layer-1 kept bar inside, inclusive [MeV]
+  mip_spectrum_bins: [0.0, 8.0, 200]       # diagnostics: per-end E_MIP histogram (low, high, number of bins)
+  mip_fit_range: [0.7, 1.3]                # diagnostics: Gauss / Landau fit range on the per-end E_MIP spectra [MIP]
+  diagnostics_min_bin_count: 1             # diagnostics: spectrum bins with fewer entries are not drawn / fitted
+  event_energy_bin_mev: 5.0                # diagnostics: bin width of the per-event energy histogram [MeV]
+
+tot_adc_peak:
+  # stage adcpeak (ldmx_hcal/energy/tot_adc_peak.py): output units (-only) line_table, line_fits, energy_response,
+  # energy_spectra, linearity_resolution; the per-event Arbitrary Energy [a.u.] is kept in cache/ only.
+  # ---- line fit TOT = slope * adc_max + offset ----
+  fit_dataset: "pion 3"              # run of the line fit (every csv of its folder); -fit-dataset PARTICLE E
+  fit_adc_window: [949, 1021]        # adc_max window of the fit, inclusive
+  fit_tot_window: [500, 2000]        # TOT window of the fit, exclusive (2024 version: [1, 500])
+  fit_bin_width: 3                   # ADC bin width; the bins cover the whole fit_adc_window (last edge above it)
+  fit_outlier_nsigma: 3.0            # bin means farther than this many sigma (ddof 0) from the mean bin mean are
+                                     # removed
+  fit_min_bins: 2                    # bins needed after the outlier cut
+  plot_adc_window: [900, 1050]       # fit pages: x range; the scatter shows fired hits with adc_max >= the low edge
+  plot_max_points: 5000              # scatter points kept per channel-end while reading (<= 0: all)
+  plot_sample_seed: 12345            # seed of that per-channel random sample (same sample for any chunk size)
+  # ---- event reconstruction (Arbitrary Energy [a.u.]) ----
+  tot_mode: linear                   # linear | none (ADC only) | mean_fallback (mean line for unusable channels)
+  slope_window: [0.6, 4.0]           # usable line: low <= slope < high [TOT counts per ADC count]
+  require_fit_ok: true               # the line must have status ok
+  saturation_adc: 1022               # adc_max >= this: saturated / near the rail (spec 06)
+  merge_rail_adc: null               # end merge: end "at the rail" if adc_max >= this (null: saturation_adc; CI uses
+                                     # 1023)
+  hit_threshold_column: pedestal_range_with_20percent   # end hit: adc_sum >= this calibration column (1.2 x
+                                     # pedestal, the 2022 standard; pedestal_range_with_5sigma = pedestal + 5 sigma,
+                                     # Lei's advice for later years)
+  quality_threshold: null            # keep events with unrecoverable_bar_fraction <= this, 0..1 (null: no cut; CI
+                                     # uses 0.125)
+  # ---- response ----
+  spectrum_fit: two_pass             # two_pass | peak_scan [-spectrum-fit]
+  # ---- output ----
+  write_bar_csv: false               # also write the bar values of every input csv into
+                                     # cache/[test/]tot_adc_peak/<run>/<csv stem>_bars<_tag>.csv (input of plots
+                                     # -energy arbitrary; needs a response unit, no -from-saved) [-bar-csv]
+  output_tag: null                   # extra suffix of the cache and response files: [A-Za-z0-9][A-Za-z0-9._-]*,
+                                     # not none / mean_fallback (+ _...)
+
+charge_injection:   # stage ci (ldmx_hcal/energy/charge_injection.py); CLI flags override these keys
+  # output units (-only): parameters, events, linearity, resolution, eh (default) and the checks response,
+  # quality_scan (only on request)
+  # ---- reconstruction, event selection, outputs (BLOCK 3-5) ----
+  energy_paths: [adc_only, pureci, s]  # scales reconstructed when no path flag (-adc-only / -pureci / -s) is given
+  selection_path: s  # bad-strip flags of this scale select events: s (computed even if not requested) | pureci |
+                     # adc_only | auto
+  bad_bar_rule: used_ends  # bad bar of the 1/8 event rule: used_ends = no end the bar energy uses is trusted and an
+                           # end is saturated with an unconvertible TOT (Lei D4) | used_ends_strict = no used end
+                           # trusted (pending Lei)
+  quality_filter: true  # False = keep every reconstructed event (--no-quality-filter)
+  quality_threshold: 0.125  # selected = bad_strip_fraction <= threshold + tolerance
+  quality_tolerance: 1.0e-12  # floating-point tolerance of the cut
+  adc_max_rail: 1023  # merge tree: an end is "at the rail" when adc_max == this [ADC]
+  hit_threshold_column: pedestal_range_with_20percent  # calibration column of the end hit threshold
+                                                       # (reconstruction, CI protected gate and s training alike)
+  chunk_rows: 400000  # beam-csv rows per chunk
+  output_tag: null  # extra variant suffix of every product file (--output-tag); s_pion, s_muon, s_electron, s_mix
+                    # (+ "_...") and clean ("clean", "..._clean") are reserved
+  linearity_source: two_pass  # electron points of the linearity: two_pass | peak_scan; with --fit the points come
+                              # from the --fit range fits (Lei 2026-10-02)
+  muon_fit_bins: 180  # muon core Gaussian: bins on [q0.001, q0.995]
+  pion_fit_bins: 160  # pion default single-Gaussian core fit (Lei 2026-10-02; double Gaussian only with
+                      # --fit[a,b],[c,d]): bins on [q0.001, q0.995]
+  fit_quantiles: [0.001, 0.995]  # muon / pion fit histogram range (quantiles of the energies)
+  display_upper_quantile: 0.999  # muon / pion display histogram: [0, this quantile]
+  display_min_bins: 60  # muon / pion display histogram: at least this many bins
+  scan_threshold_grid: [0.0, 0.025, 0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4,
+                        0.5, 0.6, 0.75, 1.0]  # thresholds of the quality scan (-only quality_scan)
+  scan_shoulder_range_mip: [70.0, 100.0]  # quality scan, 4 GeV evaluation: low-side shoulder [lo, hi)
+  scan_core_range_mip: [105.0, 125.0]  # quality scan, 4 GeV evaluation: peak core [lo, hi)
+  # ---- parameter sources (BLOCK 6) ----
+  scale_particle: pion  # training sample(s) of the s fit (s parameter, Lei): pion (4 GeV pions, default) | muon |
+                        # electron | mix (hits of all three pooled, one fit), or a list of them: one s_<sample> path
+                        # each, s = the sample with the fewest channels that borrow s from the prior; anything but
+                        # pion alone -> *_s_<samples> files [-scale-particle]
+  scale_training_datasets:  # sample -> run reference(s) of the s fit, any run of datasets.yml; a list (or a
+    pion: "pion 4"          # reference naming several runs) is pooled into the one fit
+    muon: "muon 4"
+    electron: "electron 4"
+    mix: ["pion 4", "muon 4", "electron 4"]
+  refit: false  # True = never reuse the cached CI / s parameters (cache/[test/]charge_injection/parameters<v>/)
+  scan_files: ["${ci_scan_dir}/scan_DPM0_CALIBRUN_coff14_20220424_220633.csv",
+               "${ci_scan_dir}/scan_DPM1_CALIBRUN_coff14_20220424_220543.csv"]  # CI scans (DPM0, DPM1); a bare file
+                                                                                # name is looked up in ci_scan_dir
+  channel_map_csv: null  # null = paths.channel_map
+  # ---- channel conventions shared by BLOCK 2 (s training) and BLOCK 3 (reconstruction) ----
+  bar_key_size: 2100  # bar key = layer*100 + strip < this; channel uid = end*size + key
+  adc_max_rail_guard: 1020.0  # adc_max < this = ADC not railed (exact overlap); >= this = near rail (reconstruction
+                              # candidate / bad-strip flags) [ADC]
+  known_bad_bars: [[12, 4], [12, 5], [12, 6], [12, 7]]  # (layer, strip) never TOT-converted
+  # ---- BLOCK 1: CI scan -> per-channel CI map (charge injection provided by Erik Wallin; spec 07 section 3) ----
+  tot_sample_mode: sum8  # sum8 (sum of the 8 samples) | sum8_mask2048 (2048 samples -> 0 first)
+  tot_spurious_sample: 2048  # TOT sample value treated as spurious by sum8_mask2048
+  adc_consist: 40.0  # max adc_sum8 range of a no-TOT DAC group [ADC]
+  tot_consist_low: 40.0  # max tot_sum8 range of a TOT group, low cap [TOT counts]
+  tot_consist_high: 20.0  # max tot_sum8 range of a TOT group, high cap [TOT counts]
+  min_repeats: 3  # min injections per DAC group
+  dac_fullscale: 2048  # DAC full scale
+  lowcap_fc: 500.0  # low-cap full-scale charge [fC]
+  highcap_fc: 8000.0  # high-cap full-scale charge [fC]
+  lead_dac_max: 100  # high-cap lead fit uses DAC < this
+  min_tot_region_points: 6  # min TOT-region points for the pole fit
+  pole_asym_points: 5  # asymptote fitted on the N highest-q points
+  pole_a_bound: 100000.0  # |A| bound of the pole fit used for the outlier mask
+  pole_b_margin_fc: 10.0  # B in [0, turn-on - margin] [fC]
+  outlier_resid: 500.0  # pole outlier: |TOT - pass-1 model| >= this [TOT counts]
+  audit_failures: true  # run the 1e4-bound audit + TOT=1500 inversion (their failures fail the channel, L12 S4-7;
+                        # --no-audit-failures)
+  pole_a_bound_audit: 10000.0  # |A| bound of the audit fit
+  audit_probe_tot: 1500.0  # audit inversion TOT [counts]
+  audit_grid_n: 4001  # audit inversion grid points
+  q_grid_n: 20001  # pole inversion grid points (pole_charge_from_tot, diagnostics only)
+  q_max_fc: 16376.0  # pole inversion grid end = 8 x 2047 [fC]
+  tot_rail_lo: 4094.0  # TOT >= this is railed: never a node [TOT counts]
+  min_reliable_points: 6  # min reliable TOT-region points
+  min_monotone_nodes: 4  # min unique monotone nodes
+  pava_tie_tol: 1.0e-09  # PAVA levels closer than this collapse into one node
+  endpoint_slope_points: 5  # nodes used for the extrapolation slopes
+  endpoint_slope_fallback: 1.0e-06  # slope if fit and secant are not positive [fC/count]
+  # TOT threshold of every channel (ci_tot_threshold_fc; Erik Wallin's CI calibration of the scans)
+  thr_min_repeats: 3  # group size cut
+  thr_adc_consist: 40.0  # ADC range cut (no-TOT groups)
+  thr_tot_consist_low: 40.0  # TOT range cut, low cap
+  thr_tot_consist_high: 20.0  # TOT range cut, high cap
+  thr_asym_points: 5  # asymptote on the last N groups
+  thr_a_bound: 10000.0  # |A| bound
+  thr_b_margin_fc: 10.0  # B <= threshold - margin [fC]
+  # ---- BLOCK 2: exact-overlap training + hierarchical s fit (s parameter, Lei; spec 07 sections 6-7) ----
+  ratio_max: 50.0  # exact-overlap ratio window (0, ratio_max)
+  shrinkage_lambda: 5.0  # lambda of w = n/(n+lambda), or "cv" (--shrinkage)
+  lambda_grid: [0.0, 2.0, 5.0, 10.0, 20.0, 40.0, 80.0]  # cv grid
+  pointwise_loss_guard: 1.05  # cv: eligible if pointwise error <= guard x minimum
+  cv_fallback_lambda: 5.0  # cv: used when no lambda is eligible (low statistics)
+  cv_diagnostics: true  # compute the cv table also with a fixed lambda (json only)
+  min_link_hits: 0  # link prior needs >= this many exact hits, else global (0 = any)
+  training_chunksize: 300000  # training csv rows per chunk (performance only)
+
+energy_response:   # shared by the ci and adcpeak stages (ldmx_hcal/energy/energy_response.py)
+  spectrum_bins: 90  # two-pass core fit: equal-width bins over the display range
+  min_bin_count: 10  # bins with fewer entries are neither drawn nor fitted
+  window_nsigma: 2.0  # pass-2 window = mu1 +/- window_nsigma * sigma1
+  min_fit_bins: 8  # required visible bins (pass 1) and core bins (pass 2)
+  hist_upper_percentile: 99.8  # display range upper edge = max(hist_upper_min, factor * percentile)
+  hist_upper_factor: 1.08  # display range factor (see hist_upper_percentile)
+  hist_upper_min: 3.0  # display range lower bound of the upper edge [MIP or a.u.]
+  peak_scan_bins: 300  # peak-scan ("unbinned") fit binning
+  peak_scan_upper_percentile: 99.7  # peak-scan range upper edge = max(upper_min, factor * percentile)
+  peak_scan_upper_factor: 1.12  # peak-scan range factor
+  peak_scan_upper_min: 3.0  # peak-scan range lower bound of the upper edge
+  # fit ranges (Lei 2026-10-02; null = the default).  The spectrum fit range -fit[a,b] / -fit[a,b],[c,d] and -bin N are
+  # COMMAND-LINE ONLY: ci (MIP) and adcpeak (a.u.) spectra have different x axes, so fit_ranges / fit_bins here stop
+  # the run.
+  linearity_fits: null  # straight lines mu = slope * E + intercept, one per particle, never two particles together:
+                        # {particle: [a, b] GeV, or null = every point of it} (-linfit electron[0,1] pion); {} = no
+                        # fit; null = the default of the scale: ci adc_only no fit, PureCI electron [0, 1] GeV, s every
+                        # electron point; adcpeak no fit (points only)
+  resolution_fit_range: null  # [a, b] GeV: the resolution model fitted on the electron points a <= E <= b
+                              # (--resfit[a,b]); null = every electron point (pion points are drawn only)
+  linearity_weighted: true  # weighted (1/mu_err^2) line fit; False = unweighted polyfit
+  normal_error: false  # --normalerror (Lei D6): also give errors x sqrt(chi2/ndf) when chi2/ndf > 1 (linearity and
+                       # resolution; tables: both, figures: scaled)
+  error_prescription: sigma_over_sqrt_n  # point errors: sigma_over_sqrt_n | sigma_fit_error | gaussian
+  resolution_p0: [50.0, 8.0, 0.05]  # start values a [MeV], b [sqrt(MeV)], c
+  resolution_bounded: true  # a, b, c >= 0 (trf); False = unbounded Levenberg-Marquardt
+  resolution_maxfev: 100000  # curve_fit function-evaluation limit
+# NOTE: write small floats as 1.0e-12 (with a dot and a signed exponent): PyYAML reads 1e-12 and 1.0e5 as strings.
+
+plots:
+  # stage plots (ldmx_hcal/visualization/multiscale_plots.py): output units (-only) dist_event, dist_bar, dist_channel,
+  # event_display, bar_maps, layer, hitmap; the energies come from the ci cache (-energy s | pureci | adc_only |
+  # s_<sample>) or the adcpeak cache (-energy arbitrary, adcpeak -bar-csv); nothing is reconstructed here.
+  energy_source: s                       # s | pureci | adc_only | s_<sample> (ci, MIP) | arbitrary (adcpeak
+                                         # Arbitrary Energy, a.u.) [-energy]
+  variant: null                          # producer variant tag (ci: s_muon, s_pion_muon or an -output-tag; adcpeak:
+                                         # none, mean_fallback or an -output-tag); null = the tag of a ci / adcpeak run
+                                         # with the yml settings ("" = the untagged files); -clean-input adds ci's
+                                         # clean part [-variant]
+  hit_threshold_column: pedestal_range_with_20percent  # calibration column: end hit threshold of the hit map (1.2 x
+                                         # pedestal; pedestal_range_with_5sigma = pedestal + 5 sigma)
+  event_picker: first                    # first | highest | random (--events overrides; --energy-window restricts
+                                         # the pool)
+  n_event_displays: 10                   # event displays per run
+  random_seed: 12345                     # seed of the random picker (integer >= 0)
+  per_end_displays: false                # add the per-end 2x2 page (Display_end) and the end0-end1 map (DisplayE2)
+                                         # per event
+  color_scale: fixed                     # fixed | robust (DisplayE per-event scale max(1, min(max(p98, 0.8 max),
+                                         # 50)))
+  color_vmax_mip: 10.0                   # fixed colour-scale maximum in MIP
+  robust_percentile: 98.0                # robust scale: percentile of the event's bar energies
+  robust_max_fraction: 0.8               # robust scale: fraction of the event's maximum
+  robust_vmax_min: 1.0                   # robust scale: lower clamp
+  robust_vmax_max_mip: 50.0              # robust scale: upper clamp in MIP (no clamp for arbitrary units)
+  difference_percentile: 98.0            # end0-end1 map: percentile of |end0 - end1| over all bars
+  difference_vmax_min: 0.5               # end0-end1 map: lower clamp of the symmetric scale
+  difference_vmax_max_mip: 50.0          # end0-end1 map: upper clamp in MIP (no clamp for arbitrary units)
+  event_colormap: plasma                 # colour map of the event displays
+  map_colormap: viridis                  # colour map of the aggregated bar maps and hit maps
+  overview_bins: 300                     # event-energy overview: bins on [0, max event energy]
+  min_bin_count: 10                      # event-energy overview: draw only bins with >= this many events
+  spectrum_bins: 100                     # bins of the per-bar, per-channel and per-layer spectra
+  spectrum_quantile: 0.999               # spectra x range: [min(0, min value), 1.05 x this quantile of all values]
+  annotate_maps: true                    # write the cell values into the bar maps and hit maps
+  hitmap_events: 20                      # per-event binary hit displays in the hit-map pdf (first N events)
+  workers: 1                             # pdf rendering processes when --workers is not given (run.workers is not
+                                         # used by plots)
+  save_cache: true                       # store the reduced arrays + display rows in cache/[test/]multiscale_plots/
+                                         # (needed by -from-saved)

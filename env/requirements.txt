@@ -1,0 +1,9 @@
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+pyarrow>=12.0
+matplotlib>=3.7
+pyyaml>=6.0
+uproot>=5.0
+awkward>=2.0
+tqdm>=4.60

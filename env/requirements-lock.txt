@@ -1,0 +1,12 @@
+# Exact versions of the environment the analysis was developed and validated with
+# (Python 3.12.2, Windows 11).  Use as constraints, from data_analysis/:
+#   pip install -r env/requirements.txt -c env/requirements-lock.txt
+numpy==1.26.4
+scipy==1.13.0
+pandas==2.2.2
+pyarrow==16.1.0
+matplotlib==3.9.0
+PyYAML==6.0.1
+uproot==5.6.4
+awkward==2.8.7
+tqdm==4.67.1

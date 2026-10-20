@@ -1,0 +1,37 @@
+# Copy this file to configure/local.yml (git-ignored) and edit it on each machine, or let
+#   .\runner.ps1 setup D:/LDMX/data        (./runner.sh setup ... on Linux / macOS)
+# write it: setup sets paths.data_dir and keeps every other key of an existing local.yml.
+# Any key given here overrides configure/config.yml.  The environment variable LDMX_DATA_DIR, when set,
+# overrides paths.data_dir of both files (e.g. in a container), without editing them.
+# The runs themselves (particle, energy, root, runs) are listed in configure/datasets.yml; the csv files of a run
+# sit in its folder <analysis_files_dir>/<Particle>_<E>GeV/ (one csv per ROOT file, made by make-csv).
+
+paths:
+  # Easiest: keep the three input sub-folders (root/, analysis_files/ with one folder per run,
+  # charge_injection_scans/) under one directory and point data_dir at it.
+  # The csv the stages generate then also go there (data_dir/<stage>/, data_dir/test/<stage>/).
+  data_dir: D:/LDMX/data
+
+  # Or read the inputs where they already are:
+  # analysis_files_dir: D:/LDMX/analysis_files   # holds the run folders <Particle>_<E>GeV/; make-csv writes there
+  # ci_scan_dir: D:/old_analysis/Analysis_data
+  # root_dir: D:/old_analysis/root
+
+# Or point single runs at ROOT files that live elsewhere, named by run reference ("muon 4", "electron 0.3") or run
+# key (muon_4GeV, as printed by .\runner.ps1 setup); only the fields root, runs and label of runs of
+# configure/datasets.yml can be changed here, new runs go there:
+# datasets:
+#   muon 4:
+#     root: [D:/somewhere/fixed_Muon_4GeV.root]
+
+# Folders that must never be written (old analysis, original data):
+# safety:
+#   protected_dirs:
+#     - D:/old_analysis
+
+# Charge-injection scan files are looked up in paths.ci_scan_dir; override the
+# names here if yours differ:
+# charge_injection:
+#   scan_files:
+#     - scan_DPM0_CALIBRUN_coff14_20220424_220633.csv
+#     - scan_DPM1_CALIBRUN_coff14_20220424_220543.csv

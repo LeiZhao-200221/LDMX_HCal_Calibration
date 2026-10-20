@@ -1,0 +1,80 @@
+# =============================================================================
+# LDMX 2022 CERN test beam - HCal prototype analysis: the beam data files
+#
+# Every run the stages can read, by particle and beam energy.  The stages take the runs from here
+# (configure/config.yml only points at this file: paths.datasets_file).  To add data, add an entry; no
+# code changes.  On the command line a run is chosen by particle and energy:
+#     --electron 0.3          the 0.3 GeV electron run(s)
+#     --electron              every electron run
+#     --electron 0.3 1 --pion 4   0.3 and 1 GeV electrons plus 4 GeV pions (an energy always belongs to the
+#                             particle flag in front of it, so electron 4, muon 4 and pion 4 never get mixed up)
+# These flags are the only way to choose runs on the command line (no positional run names).
+# Any run listed here is accepted by every stage; whether it suits the analysis is not checked.
+#
+# Run reference: in the yml settings (calibration.source_dataset, tot_adc_peak.fit_dataset,
+# charge_injection.scale_training_datasets, the "datasets:" sections of config.yml / local.yml) and in messages a
+# run is written "<particle> <energy in GeV>", full particle name: "muon 4", "electron 0.3", "pion 0.5"
+# (case-insensitive; 4GeV / 300MeV also work).
+# Run key: derived, never written here: <particle>_<E>GeV (muon_4GeV, electron_0.3GeV); it names log lines,
+# provenance records and the plots pdfs.
+#
+# Run folder: a run is the folder of its csv files, named from its place in this file:
+#   data/analysis_files/<Particle>_<E>GeV/ (muon: 4GeV: -> Muon_4GeV/; several runs at one energy:
+#   <Particle>_<E>GeV_run<N>/; simulation: MC_<Particle>_<E>GeV/; -test: data/test/analysis_files/<run>/).
+#   make-csv writes one csv per ROOT file of the run into it, named after the ROOT file
+#   (fixed_Muon_4GeV.root -> Muon_4GeV/fixed_Muon_4GeV.csv).  The later stages read every csv of the folder (an
+#   event is identified by its csv file and pf_event) and write one product per csv in a sub-folder per run
+#   (e.g. data/clean_dataset/Muon_4GeV/fixed_Muon_4GeV_clean.csv).  Nothing is merged.
+#
+# Layout:
+#   <particle>:              electron | muon | pion
+#     <energy>:              beam energy, e.g. 0.3GeV (also 0.3, 300MeV)
+#       root:                decoded HGCROC ntuple(s) read by make-csv (a path or a list; may be left out)
+#       runs:                run number(s)
+#       label:               display name (default "<Particle> <E> GeV (run N)")
+#   A run without "root" is read from the csv files already in its folder (an energy with no field is allowed).
+#   Several runs at one energy: give a list of entries, each with its own "runs" (reference
+#   "electron 0.3 run 304", key electron_0.3GeV_run304; "electron 0.3" alone = all of them).
+#   Simulation: the same layout under the section "mc:" (reference "mc muon 4", key mc_muon_4GeV); these runs
+#   cannot be chosen with the flags: make-csv converts MC files with -mc -input FILE.
+#
+# Paths: ${name} is an entry of paths: in config.yml / local.yml (data_dir, root_dir); relative paths are
+# relative to data_analysis/.
+# =============================================================================
+
+electron:
+  0.3GeV:
+    root: ${root_dir}/fixed_electron_0.3GeV.root
+    runs: [304]
+  0.4GeV:
+    root: ${root_dir}/fixed_Electron_0.4GeV.root
+    runs: [303]
+  0.5GeV:
+    root: ${root_dir}/fixed_electron_0.5GeV.root
+    runs: [302]
+  1GeV:
+    root: ${root_dir}/fixed_electron_1GeV.root
+    runs: [301]
+  4GeV:
+    root: ${root_dir}/fixed_electron_4Gev.root
+    runs: [300]
+
+muon:
+  4GeV:
+    root: ${root_dir}/fixed_Muon_4GeV.root
+    runs: [287]
+    label: Muon 4 GeV (run 287, defocused)
+
+pion:
+  # runs 285 / 288 / 297 were decoded from the CERNBox ntuples (ntuple_decoded_aligned_run_*.root.root, branch
+  # ldmxsw_event instead of pf_event) by HCAL_CERNBox_Work; make-csv does not read that ntuple layout, so no
+  # root file is listed for them: their csv files sit in their run folders (Pion_0.5GeV/, Pion_1GeV/, Pion_4GeV/).
+  0.5GeV:
+    runs: [297]
+  1GeV:
+    runs: [285]
+  3GeV:
+    root: ${root_dir}/fixed_Pion_3GeV.root
+    label: Pion 3 GeV
+  4GeV:
+    runs: [288]

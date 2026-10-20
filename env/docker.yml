@@ -1,0 +1,7 @@
+# Used inside the Docker image (env/Dockerfile copies it to configure/local.yml at build time).
+# Mount the data folder at /data and the product folders at /app/calibration and /app/results
+# (and /app/cache to keep the intermediates that -from-saved reuses between container runs):
+#   docker run --rm -v /path/to/data:/data -v "$PWD/calibration:/app/calibration" -v "$PWD/results:/app/results" \
+#              -v "$PWD/cache:/app/cache" ...
+paths:
+  data_dir: /data
