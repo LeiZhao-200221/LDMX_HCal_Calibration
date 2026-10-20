@@ -16,7 +16,7 @@ Stage order: make-csv -> calib -> clean -> adcpeak / ci -> plots. Runs are chose
 (bash) take the same arguments. Every stage, its options and outputs, the installation, the tests and the container:
 [src/README.md](src/README.md).
 
-## src/
+## src
 
 The code: the runner `runner.py` and the package `ldmx_hcal`. Details: [src/README.md](src/README.md).
 
@@ -54,7 +54,7 @@ The test suite (`run_all.py` and one test file per module).
 The configuration: the settings of every stage, the run list, the paths of this machine and the channel map.
 Details: [configure/README.md](configure/README.md).
 
-## env/
+## env
 
 The environment: the Python package lists, the container recipe with its configuration, and the checksums of the
 input files.
