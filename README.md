@@ -49,7 +49,7 @@ The shared code: configuration, input / output, fits, figures, geometry and the 
 
 The test suite (`run_all.py` and one test file per module).
 
-## configure/
+## configure
 
 The configuration: the settings of every stage, the run list, the paths of this machine and the channel map.
 Details: [configure/README.md](configure/README.md).
@@ -59,7 +59,7 @@ Details: [configure/README.md](configure/README.md).
 The environment: the Python package lists, the container recipe with its configuration, and the checksums of the
 input files.
 
-## data/
+## data
 
 The inputs and the event-level csv the stages make (not in git). Variables: [data/README.md](data/README.md).
 
@@ -87,7 +87,7 @@ The ci event energies on the three scales: one csv per beam csv, in a sub-folder
 
 The same for `-test` runs, which read the first 5000 events.
 
-## calibration/
+## calibration
 
 The per-channel calibration tables. Variables: [calibration/README.md](calibration/README.md).
 
@@ -111,7 +111,7 @@ The charge-injection map and the TOT scale s of every channel (ci).
 
 The same for `-test` runs.
 
-## results/
+## results
 
 The final results: figures and result tables (not in git). Variables: [results/README.md](results/README.md).
 
@@ -129,7 +129,7 @@ The final results of normal runs, one folder per stage:
 
 The same for `-test` runs.
 
-## cache/
+## cache
 
 The intermediates that `-from-saved` restarts from, and the test subsets (not in git; safe to delete).
 
@@ -141,7 +141,7 @@ What a stage stores in a normal run, and `unsaved/`: the final results of a run 
 
 The same for `-test` runs, and `test_subsets/`: the first-N-event subsets of the beam csv.
 
-## logs/
+## logs
 
 One log per run (not in git). Details: [logs/README.md](logs/README.md).
 
